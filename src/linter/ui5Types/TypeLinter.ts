@@ -16,6 +16,7 @@ import {JSONSchemaForSAPUI5Namespace} from "../../manifest.js";
 import type FixFactory from "./fix/FixFactory.js";
 import SourceFileMetadataCollector from "./SourceFileMetadataCollector.js";
 import EventHandlersFix from "./fix/EventHandlersFix.js";
+import {resolveSapui5Types} from "./resolveTypes.js";
 
 const log = getLogger("linter:ui5Types:TypeLinter");
 
@@ -29,11 +30,13 @@ export default class TypeLinter {
 	#sourceMaps = new Map<string, string>(); // Maps a source path to source map content
 	#sourceFileReporters = new Map<string, SourceFileReporter>();
 	#libraryDependencies: JSONSchemaForSAPUI5Namespace["dependencies"]["libs"];
+	#ui5Version: string | undefined;
 
 	constructor(
 		{workspace, filePathsWorkspace, context}: LinterParameters,
 		libraryDependencies: JSONSchemaForSAPUI5Namespace["dependencies"]["libs"],
-		sharedLanguageService: SharedLanguageService
+		sharedLanguageService: SharedLanguageService,
+		ui5Version?: string
 	) {
 		this.#sharedLanguageService = sharedLanguageService;
 		this.#metadataCollector = new SourceFileMetadataCollector();
@@ -41,6 +44,7 @@ export default class TypeLinter {
 		this.#workspace = workspace;
 		this.#filePathsWorkspace = filePathsWorkspace;
 		this.#libraryDependencies = libraryDependencies;
+		this.#ui5Version = ui5Version;
 		this.#compilerOptions = {};
 
 		const namespace = context.getNamespace();
@@ -87,12 +91,16 @@ export default class TypeLinter {
 
 		const projectScriptVersion = this.#sharedLanguageService.getNextProjectScriptVersion();
 
-		const host = await createVirtualLanguageServiceHost(
-			this.#compilerOptions, files, this.#sourceMaps, this.#context,
-			projectScriptVersion, this.#libraryDependencies
+		const {typesDir, typesIdentity} = await resolveSapui5Types(
+			this.#context.getRootDir(), this.#ui5Version
 		);
 
-		this.#sharedLanguageService.acquire(host);
+		const host = await createVirtualLanguageServiceHost(
+			this.#compilerOptions, files, this.#sourceMaps, this.#context,
+			projectScriptVersion, this.#libraryDependencies, typesDir
+		);
+
+		this.#sharedLanguageService.acquire(host, typesIdentity);
 
 		const createProgramDone = taskStart("ts.createProgram", undefined, true);
 		let program = this.#sharedLanguageService.getProgram();

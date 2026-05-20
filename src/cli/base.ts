@@ -107,6 +107,12 @@ const lintCommand: FixedCommandModule<object, LinterArgs> = {
 				describe: "Set a custom path for the UI5 Config (default: './ui5.yaml' if that file exists)",
 				type: "string",
 			})
+			.option("ui5-version", {
+				describe:
+					"Override the SAPUI5 types version used for type checking (e.g. '1.136.16'). " +
+					"Versions below 1.136.16 are not supported and will fall back to the linter's bundled types.",
+				type: "string",
+			})
 			.coerce([
 				"log-level",
 			], (arg: LinterArgs[]) => {
@@ -144,6 +150,7 @@ async function handleLint(argv: ArgumentsCamelCase<LinterArgs>) {
 		format,
 		config,
 		ui5Config,
+		ui5Version,
 		quiet,
 	} = argv;
 
@@ -166,6 +173,7 @@ async function handleLint(argv: ArgumentsCamelCase<LinterArgs>) {
 		fix,
 		config,
 		ui5Config,
+		ui5Version,
 	});
 
 	// Apply quiet mode filtering directly to the results if needed

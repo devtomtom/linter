@@ -5,6 +5,7 @@ export default class LanguageServiceHostProxy implements ts.LanguageServiceHost 
 	private readonly emptyLanguageServiceHost: ts.LanguageServiceHost;
 	private languageServiceHost: ts.LanguageServiceHost;
 	private scriptSnapshots: ts.MapLike<ts.IScriptSnapshot | undefined> = {};
+	private typesVersion = 1;
 
 	constructor() {
 		this.emptyLanguageServiceHost = this.languageServiceHost = new EmptyLanguageServiceHost();
@@ -12,6 +13,11 @@ export default class LanguageServiceHostProxy implements ts.LanguageServiceHost 
 
 	setHost(languageServiceHostImpl: ts.LanguageServiceHost | null) {
 		this.languageServiceHost = languageServiceHostImpl ?? this.emptyLanguageServiceHost;
+	}
+
+	clearSharedCache() {
+		this.scriptSnapshots = {};
+		this.typesVersion++;
 	}
 
 	public static isSharedTypesFile(filePath: string) {
@@ -31,8 +37,9 @@ export default class LanguageServiceHostProxy implements ts.LanguageServiceHost 
 
 	getScriptVersion(fileName: string) {
 		if (LanguageServiceHostProxy.isSharedTypesFile(fileName)) {
-			// All types should be cached forever as they can be shared across projects
-			return "1";
+			// Return the current types version so the DocumentRegistry re-parses
+			// type files when the types source changes (e.g. different @sapui5/types version)
+			return String(this.typesVersion);
 		}
 		return this.languageServiceHost.getScriptVersion(fileName);
 	}

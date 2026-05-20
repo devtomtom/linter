@@ -221,7 +221,7 @@ async function runLintWorkspace(
 		lintFileTypes(params),
 	]);
 
-	const typeLinter = new TypeLinter(params, libraryDependencies, sharedLanguageService);
+	const typeLinter = new TypeLinter(params, libraryDependencies, sharedLanguageService, options.ui5Version);
 	await typeLinter.lint();
 	done();
 	return context;

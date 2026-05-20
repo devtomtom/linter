@@ -50,6 +50,7 @@ test("ui5lint API: No arguments", async (t) => {
 		noConfig: undefined,
 		rootDir: process.cwd(),
 		ui5Config: undefined,
+		ui5Version: undefined,
 	});
 	t.true(t.context.lintProjectStub.getCall(0).args[1] instanceof SharedLanguageService);
 });
@@ -73,6 +74,7 @@ test("ui5lint API: Empty options", async (t) => {
 		noConfig: undefined,
 		rootDir: process.cwd(),
 		ui5Config: undefined,
+		ui5Version: undefined,
 	});
 	t.true(t.context.lintProjectStub.getCall(0).args[1] instanceof SharedLanguageService);
 });
@@ -105,6 +107,7 @@ test("ui5lint API: All options", async (t) => {
 		noConfig: true,
 		rootDir: "/path/to/project",
 		ui5Config: "ui5-lint.yaml",
+		ui5Version: undefined,
 	});
 	t.true(t.context.lintProjectStub.getCall(0).args[1] instanceof SharedLanguageService);
 });
@@ -135,6 +138,7 @@ test("UI5LinterEngine: Calling 'lint'", async (t) => {
 		noConfig: undefined,
 		rootDir: process.cwd(),
 		ui5Config: undefined,
+		ui5Version: undefined,
 	});
 	const sharedLanguageService = t.context.lintProjectStub.getCall(0).args[1];
 	t.true(sharedLanguageService instanceof SharedLanguageService);
@@ -189,6 +193,7 @@ test("UI5LinterEngine: Calling 'lint' multiple times", async (t) => {
 		noConfig: true,
 		rootDir: "/path/to/project",
 		ui5Config: "ui5-lint.yaml",
+		ui5Version: undefined,
 	});
 	const firstLintSharedLanguageService = t.context.lintProjectStub.getCall(0).args[1];
 	t.true(firstLintSharedLanguageService instanceof SharedLanguageService);
@@ -211,6 +216,7 @@ test("UI5LinterEngine: Calling 'lint' multiple times", async (t) => {
 		noConfig: undefined,
 		rootDir: process.cwd(),
 		ui5Config: undefined,
+		ui5Version: undefined,
 	});
 	const secondLintSharedLanguageService = t.context.lintProjectStub.getCall(0).args[1];
 	t.true(secondLintSharedLanguageService instanceof SharedLanguageService);
@@ -253,6 +259,7 @@ test("UI5LinterEngine: Calling 'lint' again after it failed", async (t) => {
 		noConfig: undefined,
 		rootDir: process.cwd(),
 		ui5Config: undefined,
+		ui5Version: undefined,
 	});
 	const secondLintSharedLanguageService = t.context.lintProjectStub.getCall(0).args[1];
 	t.true(secondLintSharedLanguageService instanceof SharedLanguageService);

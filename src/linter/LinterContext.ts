@@ -1,11 +1,12 @@
 import {AbstractAdapter, AbstractReader} from "@ui5/fs";
 import {createReader} from "@ui5/fs/resourceFactory";
 import {resolveLinks} from "../formatter/lib/resolveLinks.js";
-import {LintMessageSeverity, MESSAGE, MESSAGE_INFO} from "./messages.js";
+import {LintMessageSeverity, MESSAGE, MESSAGE_INFO, MessageInfoEntry} from "./messages.js";
 import {MessageArgs} from "./MessageArgs.js";
 import ts from "typescript";
 import {Ui5TypeInfo} from "./ui5Types/Ui5TypeInfo.js";
 import Fix from "./ui5Types/fix/Fix.js";
+import semver from "semver";
 
 export type FilePattern = string; // glob patterns
 export type FilePath = string; // Platform-dependent path
@@ -78,6 +79,7 @@ export interface LinterOptions {
 	configPath?: string;
 	noConfig?: boolean;
 	ui5Config?: string | object;
+	ui5Version?: string;
 	namespace?: string;
 }
 
@@ -126,6 +128,7 @@ export default class LinterContext {
 	#reportCoverage: boolean;
 	#includeMessageDetails: boolean;
 	#applyAutofix: boolean;
+	#ui5Version: string | undefined;
 
 	constructor(options: LinterOptions) {
 		this.#rootDir = options.rootDir;
@@ -133,6 +136,7 @@ export default class LinterContext {
 		this.#reportCoverage = !!options.coverage;
 		this.#includeMessageDetails = !!options.details;
 		this.#applyAutofix = !!options.fix;
+		this.#ui5Version = options.ui5Version;
 	}
 
 	getRootDir(): string {
@@ -273,7 +277,7 @@ export default class LinterContext {
 		}
 		const metadata = this.#metadata.get(resourcePath);
 		if (!metadata?.directives?.size) {
-			return rawMessages.sort(sortFn);
+			return this.#filterByVersion(rawMessages.sort(sortFn));
 		}
 
 		const filteredMessages: RawLintMessage[] = [];
@@ -345,7 +349,24 @@ export default class LinterContext {
 				filteredMessages.push(rawMessage);
 			}
 		}
-		return filteredMessages;
+		return this.#filterByVersion(filteredMessages);
+	}
+
+	#filterByVersion(messages: RawLintMessage[]): RawLintMessage[] {
+		if (!this.#ui5Version) {
+			return messages;
+		}
+		const coercedVersion = semver.coerce(this.#ui5Version);
+		if (!coercedVersion) {
+			return messages;
+		}
+		return messages.filter((msg) => {
+			const info = MESSAGE_INFO[msg.id] as MessageInfoEntry;
+			if (info.sinceVersion && semver.lt(coercedVersion, info.sinceVersion)) {
+				return false;
+			}
+			return true;
+		});
 	}
 
 	generateLintResult(resourcePath: ResourcePath): LintResult {

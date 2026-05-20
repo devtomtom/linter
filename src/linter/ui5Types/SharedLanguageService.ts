@@ -8,6 +8,7 @@ export default class SharedLanguageService {
 	private readonly languageService: ts.LanguageService;
 	private acquired = false;
 	private projectScriptVersion = 0;
+	private lastTypesIdentity: string | undefined;
 
 	constructor() {
 		this.languageServiceHostProxy = new LanguageServiceHostProxy();
@@ -15,11 +16,17 @@ export default class SharedLanguageService {
 		this.languageService = ts.createLanguageService(this.languageServiceHostProxy, this.documentRegistryProxy);
 	}
 
-	acquire(languageServiceHost: ts.LanguageServiceHost) {
+	acquire(languageServiceHost: ts.LanguageServiceHost, typesIdentity?: string) {
 		if (this.acquired) {
 			throw new Error("SharedCompiler is already acquired");
 		}
 		this.acquired = true;
+
+		// Clear shared type caches if the types source has changed (e.g. different @sapui5/types version)
+		if (typesIdentity && typesIdentity !== this.lastTypesIdentity) {
+			this.languageServiceHostProxy.clearSharedCache();
+			this.lastTypesIdentity = typesIdentity;
+		}
 
 		// Set actual LanguageServiceHost implementation
 		this.languageServiceHostProxy.setHost(languageServiceHost);

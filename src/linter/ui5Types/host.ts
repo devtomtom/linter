@@ -3,6 +3,7 @@ import path from "node:path";
 import posixPath from "node:path/posix";
 import fs from "node:fs/promises";
 import {createRequire} from "node:module";
+import {pathToFileURL} from "node:url";
 import transpileAmdToEsm from "./amdTranspiler/transpiler.js";
 import LinterContext, {ResourcePath} from "../LinterContext.js";
 import {getLogger} from "@ui5/logger";
@@ -14,27 +15,30 @@ interface PackageJson {
 	dependencies: Record<string, string>;
 }
 
-function addPathMappingForPackage(pkgName: string, pathMapping: Map<string, string>) {
-	const pkgDir = path.dirname(require.resolve(`${pkgName}/package.json`));
+function addPathMappingForPackage(
+	pkgName: string, pathMapping: Map<string, string>, requireFn: NodeRequire = require
+) {
+	const pkgDir = path.dirname(requireFn.resolve(`${pkgName}/package.json`));
 	pathMapping.set(pkgName, pkgDir);
 }
 
-async function collectTransitiveDependencies(pkgName: string, deps: Set<string>): Promise<Set<string>> {
-	const pkgJsonPath = require.resolve(`${pkgName}/package.json`);
+async function collectTransitiveDependencies(
+	pkgName: string, deps: Set<string>, requireFn: NodeRequire = require
+): Promise<Set<string>> {
+	const pkgJsonPath = requireFn.resolve(`${pkgName}/package.json`);
 	const pkgJson = JSON.parse(await fs.readFile(pkgJsonPath, "utf8")) as PackageJson;
 	if (pkgJson.dependencies) {
 		await Promise.all(Object.keys(pkgJson.dependencies).map(async (depName) => {
 			deps.add(depName);
-			const depDeps = await collectTransitiveDependencies(depName, deps);
+			const depDeps = await collectTransitiveDependencies(depName, deps, requireFn);
 			depDeps.forEach((dep) => deps.add(dep));
 		}));
 	}
 	return deps;
 }
 
-async function collectSapui5TypesFiles() {
-	const typesDir = path.dirname(require.resolve("@sapui5/types/package.json"));
-	const allFiles = await fs.readdir(path.join(typesDir, "types"), {withFileTypes: true});
+async function collectSapui5TypesFiles(sapui5TypesDir: string) {
+	const allFiles = await fs.readdir(path.join(sapui5TypesDir, "types"), {withFileTypes: true});
 	const typesFiles = [];
 	for (const entry of allFiles) {
 		if (entry.isFile() && entry.name.endsWith(".d.ts") && entry.name !== "index.d.ts") {
@@ -120,7 +124,8 @@ export async function createVirtualLanguageServiceHost(
 	files: FileContents, sourceMaps: FileContents,
 	context: LinterContext,
 	projectScriptVersion: string,
-	libraryDependencies: JSONSchemaForSAPUI5Namespace["dependencies"]["libs"]
+	libraryDependencies: JSONSchemaForSAPUI5Namespace["dependencies"]["libs"],
+	sapui5TypesDir?: string
 ): Promise<ts.LanguageServiceHost> {
 	const compilerOptions = {
 		...DEFAULT_COMPILER_OPTIONS,
@@ -135,15 +140,27 @@ export async function createVirtualLanguageServiceHost(
 	const typePathMappings = new Map<string, string>();
 	addPathMappingForPackage("typescript", typePathMappings);
 
+	// Create a require function scoped to the sapui5TypesDir for resolving @sapui5/types
+	// and its transitive dependencies
+	const typesRequire = sapui5TypesDir ?
+			createRequire(pathToFileURL(path.join(sapui5TypesDir, "package.json")).href) :
+		require;
+
+	// Map @sapui5/types to the resolved directory
+	typePathMappings.set("@sapui5/types", sapui5TypesDir ?? path.dirname(
+		require.resolve("@sapui5/types/package.json")
+	));
+	log.verbose(`Resolved @sapui5/types directory: ${typePathMappings.get("@sapui5/types")!}`);
+
 	const typePackages = new Set(["@sapui5/types"]);
-	await collectTransitiveDependencies("@sapui5/types", typePackages);
+	await collectTransitiveDependencies("@sapui5/types", typePackages, typesRequire);
 
 	// Remove dependencies that are not needed for UI5 linter type checking:
 	typePackages.delete("@types/three"); // Used in sap.ui.vk, but is not needed for linter checks.
 	typePackages.delete("@types/offscreencanvas"); // Used by @types/three
 
 	typePackages.forEach((pkgName) => {
-		addPathMappingForPackage(pkgName, typePathMappings);
+		addPathMappingForPackage(pkgName, typePathMappings, typesRequire);
 	});
 	const typePackageDirs = Array.from(typePackages.keys()).map((pkgName) => `/types/${pkgName}/`);
 
@@ -156,8 +173,11 @@ export async function createVirtualLanguageServiceHost(
 	compilerOptions.types.push(...typePackageDirs.filter((dir) => dir !== "/types/@sapui5/types/"));
 
 	// Adds types / mappings for all @sapui5/types
+	const resolvedSapui5TypesDir = sapui5TypesDir ?? path.dirname(
+		require.resolve("@sapui5/types/package.json")
+	);
 	addSapui5TypesMappingToCompilerOptions(
-		await collectSapui5TypesFiles(), compilerOptions, context, libraryDependencies);
+		await collectSapui5TypesFiles(resolvedSapui5TypesDir), compilerOptions, context, libraryDependencies);
 
 	// Create regex matching all path mapping keys
 	const pathMappingRegex = new RegExp(

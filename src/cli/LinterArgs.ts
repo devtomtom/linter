@@ -8,5 +8,6 @@ export default interface LinterArgs {
 	format: string;
 	config?: string;
 	ui5Config?: string;
+	ui5Version?: string;
 	quiet: boolean;
 }

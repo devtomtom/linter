@@ -738,3 +738,16 @@ export const MESSAGE_INFO = {
 	},
 
 } as const;
+
+export interface MessageInfoEntry {
+	severity: LintMessageSeverity;
+	ruleId: string;
+	message: (...args: never[]) => string;
+	details: (...args: never[]) => string | undefined;
+	fatal?: boolean;
+	/**
+	 * Minimum UI5 version for which this message is relevant.
+	 * When set, the message is suppressed if the target UI5 version is below this value.
+	 */
+	sinceVersion?: string;
+}

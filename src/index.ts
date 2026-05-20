@@ -45,6 +45,11 @@ export interface UI5LinterOptions {
 	 */
 	ui5Config?: string | object;
 	/**
+	 * Override the SAPUI5 types version used for type checking (e.g. '1.136.16').
+	 * Versions below 1.136.16 are not supported and will fall back to the linter's bundled types.
+	 */
+	ui5Version?: string;
+	/**
 	 * Root directory of the project
 	 * @default process.cwd()
 	 */
@@ -74,6 +79,7 @@ export class UI5LinterEngine {
 			noConfig,
 			coverage = false,
 			ui5Config,
+			ui5Version,
 			rootDir = process.cwd(),
 		} = options ?? {};
 
@@ -88,6 +94,7 @@ export class UI5LinterEngine {
 				configPath: config,
 				noConfig,
 				ui5Config,
+				ui5Version,
 			}, this.sharedLanguageService);
 		} finally {
 			// Ensure that the flag is reset even if an error occurs

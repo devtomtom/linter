@@ -4,16 +4,19 @@ import {FilePattern, LinterOptions, LintResult} from "./LinterContext.js";
 import lintWorkspace from "./lintWorkspace.js";
 import {taskStart} from "../utils/perf.js";
 import path from "node:path";
-import {stat} from "node:fs/promises";
+import {readFile, stat} from "node:fs/promises";
 import {ProjectGraph} from "@ui5/project";
 import type {AbstractReader, Resource} from "@ui5/fs";
 import ConfigManager, {UI5LintConfigType} from "../utils/ConfigManager.js";
 import {Minimatch} from "minimatch";
 import type SharedLanguageService from "./ui5Types/SharedLanguageService.js";
 import {FSToVirtualPathOptions, transformVirtualPathToFilePath} from "../utils/virtualPathToFilePath.js";
+import semver from "semver";
+import {getLogger} from "@ui5/logger";
+const log = getLogger("linter:linter");
 
 export async function lintProject({
-	rootDir, filePatterns, ignorePatterns, coverage, details, fix, configPath, ui5Config, noConfig,
+	rootDir, filePatterns, ignorePatterns, coverage, details, fix, configPath, ui5Config, ui5Version, noConfig,
 }: LinterOptions, sharedLanguageService: SharedLanguageService): Promise<LintResult[]> {
 	if (!path.isAbsolute(rootDir)) {
 		throw new Error(`rootDir must be an absolute path. Received: ${rootDir}`);
@@ -28,9 +31,12 @@ export async function lintProject({
 	ui5Config = ui5Config ?? config.ui5Config;
 
 	const projectGraphDone = taskStart("Project Graph creation");
-	const graph = await getProjectGraph(rootDir, ui5Config);
+	const {graph, frameworkVersion} = await getProjectGraph(rootDir, ui5Config);
 	const project = graph.getRoot();
 	projectGraphDone();
+
+	// Determine effective UI5 version: CLI > ui5.yaml > undefined (use bundled types)
+	const effectiveUi5Version = resolveEffectiveUi5Version(ui5Version, frameworkVersion);
 
 	let virBasePath = "/resources/";
 	if (!project._isSourceNamespaced) {
@@ -75,6 +81,7 @@ export async function lintProject({
 		configPath,
 		noConfig,
 		ui5Config,
+		ui5Version: effectiveUi5Version,
 		relFsBasePath, virBasePath, relFsBasePathTest, virBasePathTest,
 	}, config, sharedLanguageService);
 
@@ -187,7 +194,9 @@ async function lint(
 	return res;
 }
 
-async function getProjectGraph(rootDir: string, ui5Config?: string | object): Promise<ProjectGraph> {
+async function getProjectGraph(
+	rootDir: string, ui5Config?: string | object
+): Promise<{graph: ProjectGraph; frameworkVersion: string | undefined}> {
 	let rootConfigPath, rootConfiguration;
 	let ui5YamlPath;
 	if (typeof ui5Config !== "object") {
@@ -242,7 +251,10 @@ async function getProjectGraph(rootDir: string, ui5Config?: string | object): Pr
 		);
 	}
 
-	return graphFromObject({
+	// Read framework version from ui5.yaml if available
+	const frameworkVersion = await readFrameworkVersion(ui5YamlPath);
+
+	const graph = await graphFromObject({
 		dependencyTree: {
 			id: "ui5-linter-target",
 			version: "1.0.0",
@@ -253,6 +265,48 @@ async function getProjectGraph(rootDir: string, ui5Config?: string | object): Pr
 		rootConfiguration,
 		resolveFrameworkDependencies: false,
 	});
+
+	return {graph, frameworkVersion};
+}
+
+const MINIMUM_DYNAMIC_TYPES_VERSION = "1.136.16";
+
+async function readFrameworkVersion(ui5YamlPath: string | undefined): Promise<string | undefined> {
+	if (!ui5YamlPath) {
+		return undefined;
+	}
+	try {
+		const content = await readFile(ui5YamlPath, "utf8");
+		// Simple regex extraction to avoid full YAML parsing overhead
+		const match = /^framework:\s*\n(?:.*\n)*?\s+version:\s*["']?(\d+\.\d+\.\d+)["']?/m.exec(content);
+		if (match?.[1]) {
+			return match[1];
+		}
+		// Try alternate format: version on same level as name
+		const altMatch = /framework:[\s\S]*?version:\s*["']?(\d+\.\d+\.\d+)["']?/.exec(content);
+		return altMatch?.[1];
+	} catch {
+		// File doesn't exist or can't be read
+		return undefined;
+	}
+}
+
+function resolveEffectiveUi5Version(
+	cliVersion: string | undefined, frameworkVersion: string | undefined
+): string | undefined {
+	const version = cliVersion ?? frameworkVersion;
+	if (!version) {
+		return undefined;
+	}
+	// Versions below 1.136 are not supported for dynamic types — fall back to bundled
+	if (semver.lt(semver.coerce(version) ?? version, MINIMUM_DYNAMIC_TYPES_VERSION)) {
+		log.verbose(
+			`UI5 version ${version} is below the minimum supported version ` +
+			`(${MINIMUM_DYNAMIC_TYPES_VERSION}) for dynamic type resolution. ` +
+			`Falling back to the linter's bundled types.`);
+		return undefined;
+	}
+	return version;
 }
 
 interface ProjectConfig {
